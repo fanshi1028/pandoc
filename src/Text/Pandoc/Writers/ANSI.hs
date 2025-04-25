@@ -10,7 +10,7 @@
 
 Conversion of 'Pandoc' documents to Ansi terminal output.
 -}
-module Text.Pandoc.Writers.ANSI ( writeANSI ) where
+module Text.Pandoc.Writers.ANSI ( writeANSI, writeANSIEscaped ) where
 import Control.Monad.State.Strict ( StateT, gets, modify, evalStateT )
 import Control.Monad (foldM)
 import Data.List (intersperse)
@@ -58,9 +58,9 @@ withFewerColumns n a = do
   return result
 
 -- | Convert Pandoc to ANSI
-writeANSI :: PandocMonad m => WriterOptions -> Pandoc -> m Text
-writeANSI opts document =
-  evalStateT (pandocToANSI opts document)
+writeANSI' :: PandocMonad m => Bool -> WriterOptions -> Pandoc -> m Text
+writeANSI' withANSI opts document =
+  evalStateT (pandocToANSI withANSI opts document)
             WriterState { stNotes = [],
                           stColumns = (writerColumns opts),
                           stInner = False,
@@ -69,10 +69,12 @@ writeANSI opts document =
                           stInTable = False
                         }
 
+writeANSI = writeANSI' True
+writeANSIEscaped = writeANSI' False
+
 -- | Return ANSI-styled version of document
-pandocToANSI :: PandocMonad m
-                => WriterOptions -> Pandoc -> TW m Text
-pandocToANSI opts (Pandoc meta blocks) = do
+pandocToANSI' :: PandocMonad m => Bool -> WriterOptions -> Pandoc -> TW m Text
+pandocToANSI' withANSI opts (Pandoc meta blocks) = do
   metadata <- metaToContext opts
                  (blockListToANSI opts)
                  (inlineListToANSI opts) meta
@@ -89,10 +91,11 @@ pandocToANSI opts (Pandoc meta blocks) = do
   let main = body $+$ notepretty
   let context = defField "body" main
               $ defField "titleblock" title metadata
-  return $
+  let render = if withANSI then D.renderANSI else D.render
+  return . toStrict . render (Just width) $
     case writerTemplate opts of
-         Nothing  -> toStrict $ D.renderANSI (Just width) main
-         Just tpl -> toStrict $ D.renderANSI (Just width) $ renderTemplate tpl context
+         Nothing  ->  main
+         Just tpl -> renderTemplate tpl context
 
 titleBlock :: Int -> Context Text -> D.Doc Text
 titleBlock width meta = if null most then D.empty else D.cblock width $ most $+$ hr
